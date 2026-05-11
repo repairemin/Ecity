@@ -1,0 +1,177 @@
+<!DOCTYPE html>
+<html lang="vi">
+<head>
+    <meta charset="UTF-8">
+    <title>Hanoi High-Detail Simulation</title>
+    <style>
+        body { margin: 0; overflow: hidden; background: #a5e1ff; }
+        #info {
+            position: absolute; top: 10px; left: 10px;
+            background: rgba(0,0,0,0.7); color: #00ffcc;
+            padding: 10px; font-family: monospace; border-left: 4px solid #fff;
+        }
+    </style>
+</head>
+<body>
+    <div id="info">LOCATION: HANOI_CITY | SCAN_MODE: HIGH_RES</div>
+    <script src="https://cdnjs.cloudflare.com/ajax/libs/three.js/r128/three.min.js"></script>
+
+    <script>
+        const scene = new THREE.Scene();
+        scene.background = new THREE.Color(0xa5e1ff);
+        scene.fog = new THREE.FogExp2(0xa5e1ff, 0.001);
+
+        const camera = new THREE.PerspectiveCamera(60, window.innerWidth / window.innerHeight, 1, 3000);
+        const renderer = new THREE.WebGLRenderer({ antialias: true });
+        renderer.setSize(window.innerWidth, window.innerHeight);
+        renderer.setPixelRatio(window.devicePixelRatio);
+        document.body.appendChild(renderer.domElement);
+
+        // Ánh sáng mặt trời mạnh hơn để làm rõ chi tiết
+        const ambient = new THREE.AmbientLight(0xffffff, 0.6);
+        scene.add(ambient);
+        const sun = new THREE.DirectionalLight(0xffffff, 1.2);
+        sun.position.set(100, 500, 100);
+        scene.add(sun);
+
+        // --- HÀM VẼ ĐƯỜNG PHỐ CHI TIẾT (CANVAS TEXTURE) ---
+        function createRoadTexture() {
+            const canvas = document.createElement('canvas');
+            canvas.width = 512; canvas.height = 512;
+            const ctx = canvas.getContext('2d');
+
+            // Nền nhựa đường xám đậm
+            ctx.fillStyle = '#333333';
+            ctx.fillRect(0, 0, 512, 512);
+
+            // Vạch kẻ tim đường (đứt đoạn)
+            ctx.strokeStyle = '#ffffff';
+            ctx.setLineDash([20, 20]);
+            ctx.lineWidth = 4;
+            ctx.beginPath();
+            ctx.moveTo(256, 0); ctx.lineTo(256, 512);
+            ctx.moveTo(0, 256); ctx.lineTo(512, 256);
+            ctx.stroke();
+
+            // Vạch đi bộ (Zebra crossing) tại ngã tư
+            ctx.setLineDash([]);
+            ctx.fillStyle = '#ffffff';
+            for(let i=0; i<6; i++) {
+                ctx.fillRect(230 + i*8, 180, 4, 30); // Ngang
+                ctx.fillRect(180, 230 + i*8, 30, 4); // Dọc
+            }
+
+            return new THREE.CanvasTexture(canvas);
+        }
+
+        const roadTex = createRoadTexture();
+        roadTex.wrapS = roadTex.wrapT = THREE.RepeatWrapping;
+        roadTex.repeat.set(10, 10);
+
+        // --- XÂY DỰNG MẶT ĐẤT ---
+        const ground = new THREE.Mesh(
+            new THREE.PlaneGeometry(2000, 2000),
+            new THREE.MeshLambertMaterial({ map: roadTex })
+        );
+        ground.rotation.x = -Math.PI / 2;
+        scene.add(ground);
+
+        // --- PHÂN KHU HÀ NỘI ---
+        const city = new THREE.Group();
+        const boxGeo = new THREE.BoxGeometry(1, 1, 1);
+
+        function addBuilding(x, z, type) {
+            let h, w, d, color;
+            if (type === 'old') { // Phố cổ
+                h = 10 + Math.random() * 15;
+                w = 8 + Math.random() * 4;
+                d = 15 + Math.random() * 10;
+                color = 0xffdb58; // Vàng đặc trưng Hà Nội
+            } else { // Cao ốc mới
+                h = 80 + Math.random() * 120;
+                w = 20 + Math.random() * 10;
+                d = 20 + Math.random() * 10;
+                color = 0x88ccff; // Kính xanh dương
+            }
+
+            const mat = new THREE.MeshPhongMaterial({ color: color });
+            const b = new THREE.Mesh(boxGeo, mat);
+            b.scale.set(w, h, d);
+            b.position.set(x, h/2, z);
+            city.add(b);
+
+            // Mái đỏ cho nhà phố cổ
+            if (type === 'old') {
+                const roof = new THREE.Mesh(new THREE.BoxGeometry(w+1, 2, d+1), new THREE.MeshLambertMaterial({color: 0xcc3300}));
+                roof.position.set(x, h + 1, z);
+                city.add(roof);
+            }
+        }
+
+        // Tạo hồ nước
+        const lake = new THREE.Mesh(
+            new THREE.CircleGeometry(150, 32),
+            new THREE.MeshPhongMaterial({ color: 0x224466, shininess: 100 })
+        );
+        lake.rotation.x = -Math.PI / 2;
+        lake.position.y = 0.2;
+        scene.add(lake);
+
+        // Rải nhà theo quy hoạch
+        for (let i = 0; i < 800; i++) {
+            const x = (Math.random() - 0.5) * 1400;
+            const z = (Math.random() - 0.5) * 1400;
+            const dist = Math.sqrt(x*x + z*z);
+
+            if (dist < 160) continue; // Chừa chỗ cho hồ
+
+            if (x > 250 || z > 250) {
+                addBuilding(x, z, 'new');
+            } else {
+                addBuilding(x, z, 'old');
+            }
+        }
+        scene.add(city);
+
+        // --- CAMERA ANIMATION ---
+        let time = 0;
+        let mode = "START";
+
+        function animate() {
+            requestAnimationFrame(animate);
+            time += 0.003;
+
+            if (mode === "START") {
+                // Quay cao để thấy rõ vạch kẻ đường
+                camera.position.set(Math.sin(time)*900, 600, Math.cos(time)*900);
+                camera.lookAt(0, 0, 0);
+                if (time > Math.PI) mode = "DESCEND";
+            } 
+            else if (mode === "DESCEND") {
+                // Lao xuống sát vạch đi bộ
+                camera.position.lerp(new THREE.Vector3(180, 15, 180), 0.02);
+                camera.lookAt(0, 5, 0);
+                if (camera.position.y < 20) mode = "STREET_VIEW";
+            }
+            else {
+                // Bay sát mặt đường, xuyên qua các tòa nhà cao tầng và nhà cổ
+                const t = time * 0.4;
+                camera.position.x = 200 * Math.sin(t);
+                camera.position.z = 200 * Math.cos(t);
+                camera.position.y = 12;
+                camera.lookAt(200 * Math.sin(t + 0.2), 10, 200 * Math.cos(t + 0.2));
+            }
+
+            renderer.render(scene, camera);
+        }
+
+        window.addEventListener('resize', () => {
+            camera.aspect = window.innerWidth / window.innerHeight;
+            camera.updateProjectionMatrix();
+            renderer.setSize(window.innerWidth, window.innerHeight);
+        });
+
+        animate();
+    </script>
+</body>
+</html>
